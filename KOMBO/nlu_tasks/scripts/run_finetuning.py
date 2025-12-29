@@ -19,6 +19,24 @@ for arg in config:
     temp[arg] = config[arg]
 
 
+# if temp['tok_type'] in ['jamo', 'stroke', 'cji', 'bts']:
+#     temp['max_seq_len'] = 256
+# elif temp['tok_type'] in ['jamo_distinct']:
+#     temp['max_seq_len'] = 1024
+#     if temp['task_name'] == "KorNLI":
+#         temp['batch_size'] = 8
+#         temp['gradient_accumulation_steps'] = 8
+#         temp['max_seq_len'] = 768
+#     elif temp['task_name'] == "PAWS_X":
+#         temp['batch_size'] = 16
+#         temp['gradient_accumulation_steps'] = 4
+#     # if temp['task_name'] in ['KB_WiC']:
+#     #     temp['learning_rate'] = 1e-05
+# elif temp['tok_type'] in ['stroke_var', 'cji_var', 'bts_var']:
+#     temp['max_seq_len'] = 1024
+# else:
+#     pass
+
 args = Namespace(**temp)
 
 init_random(seed=args.random_seed)      # initialize the random_seed to get consistent results.

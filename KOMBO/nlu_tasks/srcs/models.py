@@ -39,7 +39,7 @@ class KorQuADModel(BertPreTrainedModel):
     An abstract class to handle weights initialization and a simple interface for downloading and loading pretrained
     """
 
-    def __init__(self, config):f
+    def __init__(self, config):
         super(KorQuADModel, self).__init__(config)
         self.num_labels = config.num_labels  # 2 is a default value. (start_position and end_position)
 
