@@ -93,12 +93,10 @@ def get_nlg_dataset(args, tokenizer):
         task_util_path = "nlg_tasks.data_utils.KoCommonGen.data_utils"
     elif args.task_name == 'XL_Sum':
         task_util_path = "nlg_tasks.data_utils.XL_Sum.data_utils"
-    elif args.task_name == 'WikiLingua':
-        task_util_path = "nlg_tasks.data_utils.WikiLingua.data_utils"
     elif 'KoreanGEC' in args.task_name:
         task_util_path = "nlg_tasks.data_utils.KoreanGEC.data_utils"
     else:
-        raise ValueError("Unknown NLG task_name. Choose among [KoCommonGen, XL_Sum, WikiLingua, KoreanGEC*]")
+        raise ValueError("Unknown NLG task_name. Choose among [KoCommonGen, XL_Sum, KoreanGEC*]")
 
     import importlib
     task_util = importlib.import_module(task_util_path, package=".")
@@ -136,8 +134,6 @@ def get_nlg_dataloaders_for_accelerate(args, tokenizer):
         from nlg_tasks.data_utils.KoCommonGen.data_utils import load_task_dataset
     elif args.task_name == 'XL_Sum':
         from nlg_tasks.data_utils.XL_Sum.data_utils import load_task_dataset
-    elif args.task_name == 'WikiLingua':
-        from nlg_tasks.data_utils.WikiLingua.data_utils import load_task_dataset
     elif 'KoreanGEC' in args.task_name:
         from nlg_tasks.data_utils.KoreanGEC.data_utils import load_task_dataset
     else:
@@ -392,8 +388,6 @@ class GenerationEvaluator:
                 elif end == -1:
                     end = len(tail) - 1
                 tail = tail[: end + 1].strip()
-            elif self.task_name == 'WikiLingua':
-                pass
             else:
                 raise NotImplementedError
             only.append(tail)
@@ -463,7 +457,7 @@ def main():
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--fp16", type=lambda x: x.lower() == 'true', default=False)
     parser.add_argument("--bf16", type=lambda x: x.lower() == 'true', default=True)
-    parser.add_argument("--compile", type=lambda x: x.lower() == 'true', default=True)
+    parser.add_argument("--compile", type=lambda x: x.lower() == 'true', default=False)
 
     # Dist / DS (HF 경로에서만 사용)
     parser.add_argument("--deepspeed", type=lambda x: x.lower() == 'true', default=True)
@@ -495,7 +489,7 @@ def main():
 
     # Task / Data
     parser.add_argument("--task_name", type=str, default="XL_Sum",
-                        help="KoCommonGen || XL_Sum || WikiLingua || KoreanGEC*")
+                        help="KoCommonGen || XL_Sum || KoreanGEC*")
     parser.add_argument("--model_name", type=str, default="LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct")
     parser.add_argument("--max_input_length", type=int, default=128)
     parser.add_argument("--max_target_length", type=int, default=32)
@@ -508,7 +502,7 @@ def main():
     # Train/Eval
     parser.add_argument("--optimizer", type=str, default="adamw_torch",
                         help="[HF] adamw_torch 등 | [accelerate] adamw/adamwscale/adafactor")
-    parser.add_argument("--base_lr", type=float, default=5e-5)
+    parser.add_argument("--base_lr", type=float, default=2e-2)
     parser.add_argument("--weight_decay", type=float, default=0.01)  # accelerate 경로에서 사용
     parser.add_argument("--batch_size", type=int, default=8)
     parser.add_argument("--grad_acc", type=int, default=1)
@@ -631,7 +625,7 @@ def main():
             logging_dir=args.tb_dir,
             logging_strategy=args.log_strategy,
             logging_steps=args.log_steps,
-            evaluation_strategy=args.eval_strategy,
+            eval_strategy=args.eval_strategy,
             eval_steps=args.eval_steps,
             per_device_eval_batch_size=args.eval_batch_size,
             eval_accumulation_steps=args.eval_grad_acc,

@@ -457,7 +457,7 @@ def main():
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
     parser.add_argument("--fp16", type=_bool, default=False, help="Enable 16-bit floating-point mixed precision")
     parser.add_argument("--bf16", type=_bool, default=True, help="Enable bfloat16 mixed precision")
-    parser.add_argument("--compile", type=_bool, default=True)
+    parser.add_argument("--compile", type=_bool, default=False)
     parser.add_argument("--debugging", type=_bool, default=False, help="Enable debugging mode. If it's true, 'eval_on_start' would be activated.")
     parser.add_argument("--is_toyset", type=_bool, default=False, help="Indicates whether the dataset is a toyset or not")
 
@@ -520,7 +520,7 @@ def main():
     parser.add_argument("--base_lr", type=float, default=5e-05)         # 5e-05
     parser.add_argument("--batch_size", type=int, default=8)            # 16
     parser.add_argument("--grad_acc", type=int, default=1)
-    parser.add_argument("--epochs", type=int, default=5)               # 4
+    parser.add_argument("--epochs", type=int, default=10)               # 4
     parser.add_argument("--lr_scheduler", type=str, default="linear", help="linear  ||  cosine  || constant")
     parser.add_argument("--weight_decay", type=float, default=0.)
     parser.add_argument("--grad_clip", type=float, default=1.0)
