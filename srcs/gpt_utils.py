@@ -1,0 +1,290 @@
+import os
+import numpy as np
+from future.utils.surrogateescape import encoded
+from tqdm import tqdm
+
+
+def check_pretraining_data(raw_data_path="datasets/pretraining/concatenated.txt", doc_split=True, toyset=False):
+    # Load the dataset
+    dataset_path = raw_data_path
+    if doc_split:
+        dataset_path = dataset_path.replace(".txt", "_doc.txt")
+    if toyset:
+        dataset_path = dataset_path.replace(".txt", "_toy.txt")
+
+    if os.path.exists(dataset_path):
+        with open(dataset_path, "rbU") as f:
+            num_lines = sum(1 for _ in f)
+        if doc_split:
+            print("Number of documents in the dataset:", num_lines)
+        else:
+            print("Number of lines in the dataset:", num_lines)
+        print("Dataset already exists.")
+
+    else:
+        print("Dataset does not exist. Preparing the dataset...")
+        with open(raw_data_path, "rbU") as f:
+            num_lines = sum(1 for _ in f)
+        print("Number of lines(sentences) in the dataset:", num_lines)
+
+        # Do Doc Split
+        fr = open(dataset_path, "r")
+        next_text = 0
+        dataset = []
+        texts = []
+        for i in tqdm(range(num_lines), desc="Loading dataset...", bar_format="{l_bar}{bar:15}{r_bar}"):
+            line = fr.readline().strip()
+            if line == "":
+                next_text += 1
+                if next_text == 2:
+                    next_text = 0
+                    dataset.append(' '.join(texts))
+                    texts = []
+            else:
+                texts.append(line)
+            # if len(dataset) == 1000:
+            #     break
+        fr.close()
+
+        with open(dataset_path.replace(".txt", "_doc.txt"), "w") as fw:
+            for doc in dataset:
+                fw.write(doc + "\n")
+        with open(dataset_path.replace(".txt", "_doc_toy.txt"), "w") as fw:
+            for doc in dataset[: 1000]:
+                fw.write(doc + "\n")
+
+        del dataset
+    print("Dataset is ready.")
+
+
+def doc_tokenization(doc, tokenizer, max_length):
+    if (tokenizer.custom_tokenizer.config.name in ["jamo_var_info", "bts_units_var_info"] and
+            max_length % tokenizer.trunc_num != 0):
+        max_length = max_length - (max_length % tokenizer.trunc_num)
+
+    if "text" in doc:
+        outputs = tokenizer(doc["text"])  # {"input_ids": (# of docs, # of tokens), "attention_mask": (# of docs, # of tokens)}
+    elif "sentence" in doc:
+        outputs = tokenizer(doc["sentence"])  # {"input_ids": (# of docs, # of tokens), "attention_mask": (# of docs, # of tokens)}
+    else:
+        raise NotImplementedError
+
+    trimmed_outputs = {key: [] for key in outputs}
+    for key in outputs:
+        for tokenized_doc_data in outputs[key]:     # tokenized_doc_data = (# of tokens, )
+            doc_max_tokens = len(tokenized_doc_data) // max_length * max_length
+            trimmed_outputs[key].extend(tokenized_doc_data[: doc_max_tokens])
+
+    trimmed_outputs = {key: np.array(trimmed_outputs[key]).reshape(-1, max_length) for key in trimmed_outputs}
+    return trimmed_outputs
+
+
+def text_tokenization_for_classification(doc, tokenizer, max_length):
+    if "text" in doc:
+        outputs = tokenizer(doc["text"])  # {"input_ids": (# of batch(=doc), # of tokens), "attention_mask": (# of batch(=doc), # of tokens)}
+    elif "sentence" in doc:
+        outputs = tokenizer(doc["sentence"])  # {"input_ids": (# of batch(=doc), # of tokens), "attention_mask": (# of batch(=doc), # of tokens)}
+    elif "sentence1" in doc and "sentence2" in doc:
+        outputs = tokenizer(doc["sentence1"], doc["sentence2"])
+    else:
+        raise NotImplementedError
+
+    # max_batch_seq_length = max([len(line) for line in outputs["input_ids"]])
+    # max_batch_seq_length = max_length if max_batch_seq_length > max_length else max_batch_seq_length
+    max_batch_seq_length = max_length
+
+    trimmed_outputs = {key: [] for key in outputs}
+    for key in outputs:
+        for tokenized_doc_data in outputs[key]:  # tokenized_doc_data = (# of tokens, )
+            if key == 'input_ids':
+                tokenized_doc_data += [tokenizer.pad_token_id] * (max_batch_seq_length - len(tokenized_doc_data))
+            elif key == 'attention_mask':
+                tokenized_doc_data += [0] * (max_batch_seq_length - len(tokenized_doc_data))
+            else:
+                raise NotImplementedError
+            trimmed_outputs[key].append(tokenized_doc_data[: max_batch_seq_length])
+
+    trimmed_outputs = {key: np.array(trimmed_outputs[key]) for key in trimmed_outputs}
+    trimmed_outputs["label"] = np.array(doc["label"])
+    return trimmed_outputs
+
+
+def text_tokenization_for_mc(doc, tokenizer, max_length):
+    encoded_choices = []
+    cls_token_location = []
+    for i, line in enumerate(doc['choices']):
+        line = [choice + ' ' + tokenizer.cls_token for choice in line]
+        cur_encoded = []
+        cur_cls_token = []
+        for choice in line:
+            encoded_choice = tokenizer.encode(choice, padding="max_length", truncation=True, max_length=max_length)
+            cur_encoded.append(encoded_choice)
+            cur_cls_token.append(encoded_choice.index(tokenizer.cls_token_id))
+        encoded_choices.append(cur_encoded)
+        cls_token_location.append(cur_cls_token)
+
+    encoded_choices = np.array(encoded_choices)
+    cls_token_location = np.array(cls_token_location)
+
+    trimmed_outputs = {
+        'input_ids': encoded_choices,
+        'mc_token_ids': cls_token_location,
+        'mc_labels': np.array(doc["label"])
+    }
+    return trimmed_outputs
+
+
+def text_tokenization_for_casuallm(batch, tokenizer, max_length, max_new_tokens, task_name, mode):
+    # if (tokenizer.custom_tokenizer.config.name in ["jamo_var_info", "bts_units_var_info"] and
+    #         max_length % tokenizer.trunc_num != 0 and
+    #         max_new_tokens % tokenizer.trunc_num != 0):
+    #     max_length = max_length - (max_length % tokenizer.trunc_num)
+    #     max_new_tokens = max_new_tokens - (max_new_tokens % tokenizer.trunc_num)
+
+    if task_name == 'KoCommonGen':
+        context = [', '.join(line.split('#')) for line in batch['morpheme_set']]
+        target = batch['target']
+        if mode == 'test':
+            target = [' = '.join(line) for line in target]
+        sep_ids = tokenizer('. ')['input_ids']
+    elif task_name in ['XL_Sum', 'WikiLingua']:
+        context = batch['text']
+        target = batch['summary']
+        sep_ids = tokenizer(" 요약: ")['input_ids']
+    elif 'KoreanGEC' in task_name:
+        context = batch['wrong_text']
+        target = batch['correct_text']
+        sep_ids = tokenizer(" 수정: ")['input_ids']
+    else:
+        raise NotImplementedError
+
+    encoded_context = tokenizer(context, max_length=max_length, truncation=True, padding=False)
+    encoded_target = tokenizer(target, max_length=max_new_tokens, truncation=True, padding=False)
+
+    if mode == 'train':
+        encoded_inputs = {'input_ids': [], 'attention_mask': []}
+        for key in encoded_inputs:
+            for ctxt, tgt in zip(encoded_context[key], encoded_target[key]):
+                if key == 'input_ids':
+                    encoded_inputs[key].append(ctxt + sep_ids + tgt)
+                elif key == 'attention_mask':
+                    encoded_inputs[key].append(ctxt + [1]*len(sep_ids) + tgt)
+                else:
+                    raise NotImplementedError
+    else:
+        encoded_inputs = {'input_ids': [], 'attention_mask': []}
+        for key in encoded_inputs:
+            for ctxt in encoded_context[key]:
+                if key == 'input_ids':
+                    encoded_inputs[key].append(ctxt + sep_ids)
+                elif key == 'attention_mask':
+                    encoded_inputs[key].append(ctxt + [1]*len(sep_ids))
+                else:
+                    raise NotImplementedError
+
+    max_batch_seq_length = max([len(line) for line in encoded_inputs["input_ids"]])
+    # max_batch_seq_length = max_length if max_batch_seq_length > max_length else max_batch_seq_length
+
+    trimmed_inputs = {key: [] for key in encoded_inputs}
+    for key in encoded_inputs:
+        for tokens in encoded_inputs[key]:  # tokenized_doc_data = (# of tokens, )
+            if key == 'input_ids':
+                tokens = [tokenizer.pad_token_id] * (max_batch_seq_length - len(tokens)) + tokens       # left side padding
+            elif key == 'attention_mask':
+                tokens = [0] * (max_batch_seq_length - len(tokens)) + tokens
+            else:
+                raise NotImplementedError
+            trimmed_inputs[key].append(tokens)
+
+    if mode == 'train':
+        pass
+    else:
+        if mode == 'test':
+            labels = tokenizer(target, max_length=max_new_tokens*3, truncation=True, padding=False)['input_ids']
+        else:
+            labels = tokenizer(target, max_length=max_new_tokens, truncation=True, padding=False)['input_ids']
+
+        max_batch_label_length = max([len(line) for line in labels])
+        for l, tokenized_label in enumerate(labels):
+            tokenized_label += [-100] * (max_batch_label_length - len(tokenized_label))
+            labels[l] = tokenized_label
+        trimmed_inputs['labels'] = labels
+
+    trimmed_inputs = {key: np.array(trimmed_inputs[key]) for key in trimmed_inputs}
+    return trimmed_inputs
+
+
+def text_tokenization_for_llm_classification(examples, tokenizer, max_length, task="classification", num_labels=None):
+    # task: "classification" | "regression"  (KorNLI/NSMC vs KorSTS)
+    # num_labels: 분류일 때 클래스 수 (회귀면 무시)
+
+    # ① 문장/문장쌍 인코딩 (truncation만, padding은 collator가 담당)
+    if "text" in examples:
+        enc = tokenizer(examples["text"], truncation=True, max_length=max_length, padding=False)
+    elif "sentence" in examples:
+        enc = tokenizer(examples["sentence"], truncation=True, max_length=max_length, padding=False)
+    elif "sentence1" in examples and "sentence2" in examples:
+        enc = tokenizer(examples["sentence1"], examples["sentence2"], truncation=True, max_length=max_length, padding=False)
+    else:
+        raise NotImplementedError("Expected 'text' or 'sentence' or ('sentence1','sentence2').")
+
+    # ② labels 생성 (HF는 'labels' 키를 사용)
+    if task == "regression":
+        # float32
+        enc["labels"] = [float(x) for x in examples["label"]]
+    else:
+        # int64
+        enc["labels"] = [int(x) for x in examples["label"]]
+
+        # (선택) 라벨 범위 점검: 0..num_labels-1
+        if num_labels is not None:
+            bad = [y for y in enc["labels"] if y < 0 or y >= num_labels]
+            if bad:
+                raise ValueError(f"Label out of range: {set(bad)}")
+    return enc
+
+
+def text_tokenization_for_llm_mc(examples, tokenizer, max_length):
+    # 기대 입력:
+    #   examples["choices"] : List[List[str]]  (각 샘플의 선택지 리스트)
+    #   examples["context"] : Optional[str or List[str]]
+    #   examples["label"]   : List[int]  (정답 인덱스)
+    contexts = examples.get("context", None)
+    batch_input = []
+    prompt_lens = []  # (batch, num_choices)에서 각 시퀀스의 프롬프트 토큰 길이
+
+    for i, choices in enumerate(examples["choices"]):
+        ctx = "" if contexts is None else (contexts[i] if isinstance(contexts, list) else contexts)
+        # 선택지마다 (문맥+선택지) 생성
+        per_sample_texts = [f"{ctx} {c}".strip() for c in choices]
+        batch_input.append(per_sample_texts)
+
+        # 프롬프트 길이: ctx만 토크나이즈해 길이를 구함
+        if ctx == "":
+            per_sample_prompt_lens = [0] * len(choices)
+        else:
+            ctx_ids = tokenizer(ctx, add_special_tokens=False)["input_ids"]
+            # 일반적으로 BOS/CLS 한 개가 앞에 붙을 수 있음 → +1 보정(모델/토크나이저에 따라 다를 수 있음)
+            # 안전하게 special_tokens_map 확인 가능하지만, 실무에선 +1이 보편적으로 맞음.
+            bos_bonus = 1 if tokenizer.bos_token_id is not None or tokenizer.cls_token_id is not None else 0
+            per_sample_prompt_lens = [min(len(ctx_ids) + bos_bonus, max_length) for _ in choices]
+        prompt_lens.append(per_sample_prompt_lens)
+
+    # (batch, num_choices) → 평탄화 후 토크나이즈
+    flat_input = sum(batch_input, [])
+    enc = tokenizer(flat_input, truncation=True, max_length=max_length, padding=False)
+
+    # shape 복원
+    num_choices = [len(c) for c in batch_input]
+    assert len(set(num_choices)) == 1, "All samples must have same #choices for batching."
+    C = num_choices[0]
+
+    def _reshape(name):
+        t = enc[name]
+        return [t[i:i+C] for i in range(0, len(t), C)]
+
+    out = {k: _reshape(k) for k in enc}
+    # 프롬프트 길이도 동일 shape로
+    out["prompt_lens"] = prompt_lens                 # List[List[int]] shape: (batch, C)
+    out["labels"] = [int(x) for x in examples["label"]]
+    return out
