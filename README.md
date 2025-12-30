@@ -2,6 +2,9 @@
 
 SCRIPT is a lightweight, plug-and-play module that injects Korean subcharacter compositional knowledge into pre-trained language models without modifying their original architectures and from scratch pre-training.
 
+<img src='assets/whole_architecture.png' width='100%'>
+
+
 <br/>
 
 *This repository is currently under review.*
