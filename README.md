@@ -1,6 +1,6 @@
 # SCRIPT: A Subcharacter Compositional Representation Injection Module for Korean Pre-Trained Language Models
 
-SCRIPT is a lightweight, plug-and-play module that injects Korean subcharacter compositional information into pre-trained language models without modifying their original architectures.
+SCRIPT is a lightweight, plug-and-play module that injects Korean subcharacter compositional knowledge into pre-trained language models without modifying their original architectures and from scratch pre-training.
 
 <br/>
 
