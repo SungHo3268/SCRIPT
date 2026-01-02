@@ -380,8 +380,7 @@ class script_Combination_Layer(nn.Module):
             """
             script_embedding = script_embedding.to(self.get_org_shape_emb.weight_hh_l0.dtype)
 
-            # script_embedding = self.get_org_shape_emb(script_embedding)[0]        # (B, N_char, D)
-            script_embedding = self._run_gru(self.get_org_shape_emb, script_embedding)[0]
+            script_embedding = self._run_gru(self.get_org_shape_emb, script_embedding)[0]        # (B, N_char, D)
 
             char_seq_len = script_embedding.shape[1]
 
@@ -417,78 +416,6 @@ class script_Combination_Layer(nn.Module):
                 exit(-111)
             # print(f"11) script_embedding.shape: {script_embedding.shape}")
             # '''
-            """
-
-            end_indices = []
-            for text in text_input:
-                if 'mGPT' in self.original_tokenizer.name_or_path:
-                    tokens = []
-                    continuous_token = []
-                    for tok in self.original_tokenizer.encode(text):
-                        if len(continuous_token) > 0:
-                            continuous_token.append(tok)
-                            decoded = self.original_tokenizer.decode(continuous_token)
-                        else:
-                            decoded = self.original_tokenizer.decode(tok)
-
-                        if '�' in decoded:
-                            if len(continuous_token) > 0:
-                                pass
-                            else:
-                                continuous_token.append(tok)
-                            continue
-                        else:
-                            continuous_token = []
-                            tokens.append(decoded)
-                else:
-                    tokens = self.original_tokenizer.tokenize(text)
-
-                if len(tokens) != 0:
-                    if (len(tokens) > 1) and (tokens[-1] == "▁"):
-                        tokens = tokens[:-1]
-
-                    tokens[0] = tokens[0].replace("▁", "")
-                    if len(tokens[0]) == 0:
-                        tokens = tokens[1:]
-
-                end_idx = np.cumsum([len(word) for word in tokens]) - 1  # '-1' is for making index start from 0.
-                end_idx = [idx for idx in end_idx if idx < char_seq_len]  # Remove the index which is out of the range.
-
-                end_indices.append(end_idx)
-
-            script_embedding = [script_embedding[i, end_indices[i]] for i in range(batch_size)]  # (B, N_char, D) -> (B, N_subword(not consistent), D)
-            script_embedding = pad_sequence(script_embedding, batch_first=True, padding_value=self.pad_token_id)  # (B, N_subword, D)
-            # print(f"10) script_embedding.shape: {script_embedding.shape}")
-            
-            
-            # Padding
-            try:
-                if self.config.is_bert:
-                    if script_embedding.shape[1] > self.config.max_length - 1:
-                        print(f"There may be wrong length of script_embedding sentences.")
-                        script_embedding = script_embedding[:, :self.config.max_length - 1]
-
-                    script_embedding = torch.concat([
-                        script_embedding,
-                        torch.full(
-                            size=(batch_size, self.config.max_length - 1 - script_embedding.shape[1],
-                                  self.config.hidden_dim),  # exclude the [CLS] token
-                            fill_value=self.pad_token_id, device=x.device)
-                    ], dim=1)  # (B, N_subword, D) -> (B, max_length, D)
-                else:
-                    script_embedding = torch.concat([
-                        script_embedding,
-                        torch.full(
-                            size=(batch_size, self.config.max_length - script_embedding.shape[1], self.config.hidden_dim),
-                            fill_value=self.pad_token_id, device=x.device)
-                    ], dim=1)  # (B, N_subword, D) -> (B, max_length, D)
-            except:
-                for i in range(batch_size):
-                    print(f"text_input[{i}]: {text_input[i]}")
-                    print(f"end_indices[{i}]: {end_indices[i]}")
-                exit(-111)
-            """
-
         else:
             if self.config.is_bert:
                 script_cls_embedding = script_embedding[:, :1, :]
@@ -498,6 +425,7 @@ class script_Combination_Layer(nn.Module):
         if self.config.is_bert:
             script_embedding = torch.cat([script_cls_embedding, script_embedding], dim=1)
         return script_embedding
+
 
 class script_LoRA_Layer(nn.Module):
     """
@@ -516,15 +444,6 @@ class script_LoRA_Layer(nn.Module):
 
         self.script_combination = script_Combination_Layer(config, script_tokenizer, tokenizer)
 
-        # Use each model’s attention block to set the cross-attention block.
-        # The core customized implementations are as follows:
-        # 1) Use the "original representation for the Query",
-        # 2) Employ the "script-compressed representation for the Key and Value".
-        # 3) Activate only the direct functions for Q, K, and V in each method (e.g., AttentionBlock)
-        # 4) Deactivate other techniques such as positional embeddings.
-        # 5) Remove any normalization function from the representation, since the two heterogeneous representations largely differ in size.
-        # 6) Output of "cross_attention_block(=script_injection)" is solely the "hidden_states"
-        # However, it would be better to integrate all models into a single cross-attention block. (FUTURE WORK)
         if config.fusion == 'cross_attn':
             self.script_injection = scriptInjectionBlock(
                 hidden_size=config.hidden_dim,
@@ -537,17 +456,6 @@ class script_LoRA_Layer(nn.Module):
                 is_causal=True,
                 layer_scale_init=0.0,
             )
-
-            # if isinstance(config.trans_config, GPT2Config):
-            #     self.script_injection = CustomGPT2Block(config.trans_config, layer_idx=0)
-            # elif isinstance(config.trans_config, Qwen2Config):
-            #     self.script_injection = CustomQwen2DecoderLayer(config.trans_config, layer_idx=0)
-            # elif isinstance(config.trans_config, GPTJConfig):
-            #     self.script_injection = CustomGPTJBlock(config.trans_config)
-            # elif isinstance(config.trans_config, GPTNeoXConfig):
-            #     self.script_injection = CustomGPTNeoXLayer(config.trans_config)
-            # elif isinstance(config.trans_config, BertConfig):
-            #     self.script_injection = CustomBertAttention(config.trans_config)
         elif config.fusion == 'concat':
             self.script_concat = LinearnAddnNorm(config.max_length, config.hidden_dim)
 
@@ -560,7 +468,6 @@ class script_LoRA_Layer(nn.Module):
             self.script_concat.to(device=base_w.device, dtype=base_w.dtype)
 
         self.script_combination.flatten_rnns()
-
 
     @property
     def weight(self):
@@ -609,16 +516,6 @@ class script_LoRA_Layer(nn.Module):
         device = x.device
 
         original_embedding = self.original_layer(x)
-
-        # if self.config.is_bert:
-        #     text_input = self.tokenizer.batch_decode(x, skip_special_tokens=False)
-        #     text_input = [text.replace("[CLS]", "").replace("[PAD]", "").strip() for text in text_input]
-        #     # print("\n")
-        #     # print(f"text_input[0]: {text_input[0]}")
-        # else:
-        #     text_input = self.tokenizer.batch_decode(x, skip_special_tokens=True)
-        #
-        # script_x = self.make_script_input(text_input, device)             # (B, N(=max_script_length), D)
 
         text_input, script_x = self._decode_and_make_script_ids(x, device)
 
@@ -724,34 +621,13 @@ class script_LoRA_Layer(nn.Module):
         return "".join(lines)
 
 
-# def apply_script_to_model(model, tokenizer, script_tokenizer, script_config: script_Config, logger=None):
-#     print("\n")
-#     for name, module in model.named_modules():
-#         hierarchy = name.split('.')
-#         layer_name = hierarchy[-1]
-#         if len(hierarchy) > 1 and layer_name in ['wte', 'embed_in', 'word_embeddings', 'embed_tokens']:    # Ensure the module is not the top-level module
-#             parent_module = model
-#
-#             parent_names = hierarchy[:-1]
-#             for submodule_name in parent_names:  # Navigate to the parent module
-#                 parent_module = getattr(parent_module, submodule_name)
-#
-#             original_layer = getattr(parent_module, layer_name)
-#             if isinstance(original_layer, nn.Embedding):
-#                 script_layer = script_LoRA_Layer(tokenizer, script_tokenizer, original_layer, script_config)
-#                 setattr(parent_module, layer_name, script_layer)
-#                 if logger:
-#                     logger.info(f"Replaced {name} with script_LoRA_Layer")
-#                 else:
-#                     print(f"Replaced [ ' {name} ' ] layer with [ ' script_LoRA_Layer ' ]")
-#     return model
-
 def _retie_weights_if_needed(model):
     if getattr(getattr(model, "config", None), "tie_word_embeddings", True):
         if hasattr(model, "tie_weights"):
             model.tie_weights()
         elif hasattr(model, "_tie_or_clone_weights"):
             model._tie_or_clone_weights(None)
+
 
 def apply_script_to_model(model, tokenizer, script_tokenizer, script_config: script_Config, logger=None):
     # 1) Original Embedding
