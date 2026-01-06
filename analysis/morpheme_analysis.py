@@ -26,7 +26,7 @@ def int_seperator(cnt):
     return ','.join(remainder)
 
 
-outputs = open("analysis/assets/unit2unit-seq2seq-all.txt", "r").readlines()
+outputs = open("CharacterTagging/dataset/unit2unit-seq2seq-all.txt", "r").readlines()
 
 
 sentence_cnt = 0
