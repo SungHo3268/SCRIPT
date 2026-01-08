@@ -9,7 +9,8 @@ SCRIPT is a lightweight, plug-and-play module that injects Korean subcharacter c
 
 *This repository is currently under review.* <br/>
 - *Dataset for Character Tagging Analysis (for Section 2. Motivation) will be released [here]() upon acceptance.* <br/>
-- *BERT and KOMBO pre-trained models will be released [here]() upon acceptance.* *(Other baselines are obtained from HuggingFace* 🤗 *)* <br/>
+- *BERT and KOMBO pre-trained models will be released [here]() upon acceptance.* <br/>
+  *(Other baselines are obtained from HuggingFace* 🤗 *)* <br/>
 <br/>
 <br/>
 
