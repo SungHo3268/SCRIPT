@@ -94,7 +94,14 @@ def sents_to_tensor(bert_tokenizer, input_sents):
                    [0, 1, 1, 1, 0, 0, 0],
                    [0, 1, 1, 1, 0, 0, 0]]))
     """
-    inputs = bert_tokenizer.batch_encode_plus(input_sents, padding=True)
+    # inputs = bert_tokenizer.batch_encode_plus(input_sents, padding=True)
+    inputs = bert_tokenizer(
+        input_sents,
+        padding=True,
+        truncation=True,
+        return_attention_mask=True,
+        return_tensors="pt",
+    )
     padded_input_ids = torch.LongTensor(inputs['input_ids'])
     attention_mask = torch.LongTensor(inputs['attention_mask'])
 
@@ -446,7 +453,10 @@ def train_idf(bert_tokenizer, references, batch_size=1000, verbose=False):
         iterator = begin_index
 
     for i in iterator:
-        encoding = bert_tokenizer.batch_encode_plus(
+        # encoding = bert_tokenizer.batch_encode_plus(
+        #     references[i: i + batch_size],
+        #     add_special_tokens=False)
+        encoding = bert_tokenizer(
             references[i: i + batch_size],
             add_special_tokens=False)
         subcounter = Counter(idx for sent in encoding['input_ids'] for idx in sent)

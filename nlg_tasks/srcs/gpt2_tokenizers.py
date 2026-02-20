@@ -97,15 +97,10 @@ class KoGPT2Tokenizer(PreTrainedTokenizer):
         add_bos_token=True,
         **kwargs,
     ):
-        # self.bos_token = bos_token
-        # self.eos_token = eos_token
-        # self.unk_token = unk_token
-        # self.pad_token = pad_token
-
-        raw_bos_token = bos_token
-        raw_eos_token = eos_token
-        raw_unk_token = unk_token
-        raw_pad_token = pad_token
+        self.bos_token = bos_token
+        self.eos_token = eos_token
+        self.unk_token = unk_token
+        self.pad_token = pad_token
 
         bos_token = AddedToken(bos_token, lstrip=False, rstrip=False) if isinstance(bos_token, str) else bos_token
         eos_token = AddedToken(eos_token, lstrip=False, rstrip=False) if isinstance(eos_token, str) else eos_token
@@ -126,16 +121,16 @@ class KoGPT2Tokenizer(PreTrainedTokenizer):
         self.decoder = collections.OrderedDict([(ids, tok) for tok, ids in self.encoder.items()])
 
 
-        # self.special_tokens_encoder = {
-        #     self.pad_token: self.encoder[self.pad_token],
-        #     self.unk_token: self.encoder[self.unk_token],
-        #     self.bos_token: self.encoder[self.bos_token],
-        #     self.eos_token: self.encoder[self.eos_token],
-        # }
-        # self.special_tokens_decoder: Dict[str, int] = {
-        #     v: k for k, v in self.special_tokens_encoder.items()
-        # }
-        # self._num_special_tokens = len(self.special_tokens_encoder)
+        self.special_tokens_encoder = {
+            self.pad_token: self.encoder[self.pad_token],
+            self.unk_token: self.encoder[self.unk_token],
+            self.bos_token: self.encoder[self.bos_token],
+            self.eos_token: self.encoder[self.eos_token],
+        }
+        self.special_tokens_decoder: Dict[str, int] = {
+            v: k for k, v in self.special_tokens_encoder.items()
+        }
+        self._num_special_tokens = len(self.special_tokens_encoder)
 
 
         self.custom_tokenizer = custom_tokenizer
@@ -176,15 +171,6 @@ class KoGPT2Tokenizer(PreTrainedTokenizer):
             padding_side=padding_side,
             **kwargs,
         )
-
-        self.special_tokens_encoder = {
-                    raw_pad_token: self.encoder[raw_pad_token],
-                    raw_unk_token: self.encoder[raw_unk_token],
-                    raw_bos_token: self.encoder[raw_bos_token],
-                    raw_eos_token: self.encoder[raw_eos_token],
-        }
-        self.special_tokens_decoder = {v: k for k, v in self.special_tokens_encoder.items()}
-        self._num_special_tokens = len(self.special_tokens_encoder)
 
     @property
     def vocab_size(self):

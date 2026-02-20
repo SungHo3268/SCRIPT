@@ -1,14 +1,15 @@
-# unified_nlg_train.py
 import os
 import sys
-import re
 import json
 import argparse
+from dataclasses import dataclass
+from typing import List, Dict, Any
 from types import SimpleNamespace as NS
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 import warnings
+
 warnings.filterwarnings(
     "ignore",
     category=FutureWarning,
@@ -23,8 +24,14 @@ from transformers import (
     AutoTokenizer, AutoConfig, AutoModelForCausalLM,
     DataCollatorForLanguageModeling, DataCollatorForSeq2Seq,
     GenerationConfig, TrainingArguments, Trainer,
-    Seq2SeqTrainingArguments, Seq2SeqTrainer
+    Seq2SeqTrainingArguments, Seq2SeqTrainer,
+    PreTrainedTokenizerFast
 )
+import transformers
+transformers.logging.set_verbosity_error()
+import warnings
+warnings.filterwarnings("ignore", message=".*UNEXPECTED.*")
+warnings.filterwarnings("ignore", message=".*Some weights of.*were not used.*")
 
 from torch.utils.data import DataLoader
 from accelerate import Accelerator
@@ -112,7 +119,7 @@ def get_nlg_dataset(args, tokenizer):
             text_tokenization_for_casuallm,
             fn_kwargs={
                 "tokenizer": tokenizer,
-                "max_length": args.max_input_length,
+                "max_length": args.max_input_length + args.max_target_length + 5,
                 "max_new_tokens": args.max_target_length,
                 "task_name": args.task_name,
                 "mode": mode,
@@ -183,11 +190,16 @@ def get_nlg_dataloaders_for_accelerate(args, tokenizer):
 # ==========================
 # Model / Tokenizer
 # ==========================
-
 def get_tokenizer(args):
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name, padding_side="left", trust_remote_code=True)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token or tokenizer.unk_token
+    if 'skt/kogpt2' in args.model_name:
+        tokenizer = PreTrainedTokenizerFast.from_pretrained(
+            args.model_name,
+            bos_token='</s>', eos_token='</s>', unk_token='<unk>',
+            pad_token='<pad>', mask_token='<mask>',
+            padding_side='left'
+        )
+    else:
+        tokenizer = AutoTokenizer.from_pretrained(args.model_name, trust_remote_code=True, padding_side='left')
     return tokenizer
 
 
@@ -195,10 +207,15 @@ def get_causallm(args):
     tokenizer = get_tokenizer(args)
     config = AutoConfig.from_pretrained(args.model_name, trust_remote_code=True)
     config.use_cache = False
+    if "skt/kogpt2" in args.model_name:
+        config.tie_word_embeddings = False
     config.pad_token_id = tokenizer.pad_token_id
     model = AutoModelForCausalLM.from_pretrained(
         args.model_name, config=config, trust_remote_code=True
     )
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+        model.config.pad_token_id = tokenizer.eos_token_id
     model.resize_token_embeddings(len(tokenizer))
     return config, model, tokenizer
 
@@ -267,8 +284,8 @@ def maybe_apply_script(args, model, plm_tokenizer):
             pad_token='<|endoftext|>',
         )
         if (hasattr(script_tok, "trunc_num") and
-            args.script_tok_type in ["jamo_var", "stroke_var", "cji_var", "bts_var"] and
-            args.script_max_length % script_tok.trunc_num != 0):
+                args.script_tok_type in ["jamo_var", "stroke_var", "cji_var", "bts_var"] and
+                args.script_max_length % script_tok.trunc_num != 0):
             args.script_max_length = args.script_max_length - (args.script_max_length % script_tok.trunc_num)
             script_tok.max_length = args.script_max_length
             print(f"[script] Adjust script_max_length -> {args.script_max_length} (align truncation)")
@@ -394,7 +411,8 @@ class GenerationEvaluator:
         return only
 
     def __call__(self, eval_preds, stored_inputs, mode="dev"):
-        pred_ids = eval_preds.predictions[0] if isinstance(eval_preds.predictions, (list, tuple)) else eval_preds.predictions
+        pred_ids = eval_preds.predictions[0] if isinstance(eval_preds.predictions,
+                                                           (list, tuple)) else eval_preds.predictions
         label_ids = eval_preds.label_ids
 
         pred_full = self._decode(pred_ids)
@@ -418,7 +436,7 @@ class GenerationEvaluator:
             if self.task_name == 'KoreanGEC_union':
                 clipped = []
                 for pred, ref in zip(only_preds, refs_plain):
-                    clipped.append(pred[:len(ref)*3//2] if len(pred) > len(ref)*1.5 else pred)
+                    clipped.append(pred[:len(ref) * 3 // 2] if len(pred) > len(ref) * 1.5 else pred)
                 only_preds = clipped
             parts = self.task_name.split('_')
             path_1 = parts[0]
@@ -438,7 +456,6 @@ class GenerationEvaluator:
 # ==========================
 # Main
 # ==========================
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", type=str, default="dummy")
@@ -460,19 +477,19 @@ def main():
     parser.add_argument("--compile", type=lambda x: x.lower() == 'true', default=False)
 
     # Dist / DS (HF 경로에서만 사용)
-    parser.add_argument("--deepspeed", type=lambda x: x.lower() == 'true', default=True)
+    parser.add_argument("--deepspeed", type=lambda x: x.lower() == 'true', default=False)
     parser.add_argument("--deepspeed_stage", type=int, default=2)
     parser.add_argument("--deepspeed_offload", type=lambda x: x.lower() == 'true', default=False)
     parser.add_argument("--deepspeed_config_file", type=str)
 
     # LoRA
-    parser.add_argument("--lora", type=lambda x: x.lower() == 'true', default=True)
+    parser.add_argument("--lora", type=lambda x: x.lower() == 'true', default=False)
     parser.add_argument("--lora_r", type=int, default=32)
     parser.add_argument("--lora_alpha", type=int, default=128)
     parser.add_argument("--lora_dropout", type=float, default=0.1)
 
     # script
-    parser.add_argument('--set_script', type=lambda x: x.lower() == 'true', default=False)
+    parser.add_argument('--set_script', type=lambda x: x.lower() == 'true', default=True)
     parser.add_argument('--script_tok_type', type=str, default="jamo_var")
     parser.add_argument('--script_lang', type=str, default="ko")
     parser.add_argument('--script_reducer', type=str, default="linear")
@@ -488,9 +505,10 @@ def main():
     parser.add_argument('--script_fusion', type=str, default="cross_attn")
 
     # Task / Data
-    parser.add_argument("--task_name", type=str, default="XL_Sum",
+    parser.add_argument("--task_name", type=str, default="KoCommonGen",
                         help="KoCommonGen || XL_Sum || KoreanGEC*")
-    parser.add_argument("--model_name", type=str, default="LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct")
+    parser.add_argument("--model_name", type=str, default="skt/kogpt2-base-v2",
+                        help="skt/kogpt2-base-v2  || skt/ko-gpt-trinity-1.2B-v0.5 || LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct")
     parser.add_argument("--max_input_length", type=int, default=128)
     parser.add_argument("--max_target_length", type=int, default=32)
     parser.add_argument("--num_workers", type=int, default=1)
@@ -504,7 +522,7 @@ def main():
                         help="[HF] adamw_torch 등 | [accelerate] adamw/adamwscale/adafactor")
     parser.add_argument("--base_lr", type=float, default=2e-2)
     parser.add_argument("--weight_decay", type=float, default=0.01)  # accelerate 경로에서 사용
-    parser.add_argument("--batch_size", type=int, default=8)
+    parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--grad_acc", type=int, default=1)
     parser.add_argument("--epochs", type=int, default=5)
     parser.add_argument("--lr_scheduler", type=str, default="linear",
@@ -514,7 +532,7 @@ def main():
     parser.add_argument("--grad_clip", type=float, default=1.0)
     parser.add_argument("--eval_strategy", type=str, default="epoch")
     parser.add_argument("--eval_steps", type=int, default=5000)
-    parser.add_argument("--eval_batch_size", type=int, default=8)
+    parser.add_argument("--eval_batch_size", type=int, default=64)
     parser.add_argument("--eval_grad_acc", type=int, default=1)
     parser.add_argument("--early_stop_patience", type=int, default=0)
 
@@ -527,9 +545,9 @@ def main():
     parser.add_argument("--save_total_limit", type=int, default=50)
     parser.add_argument("--log_grad_l2", type=lambda x: x.lower() == 'true', default=False)
     parser.add_argument("--log_weights_l2", type=lambda x: x.lower() == 'true', default=False)
-
     args = parser.parse_args()
     args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
 
     # Directories
     specific_model_type = ""
@@ -578,6 +596,7 @@ def main():
     config, model, tokenizer = get_causallm(args)
     print("Done.\n")
 
+
     # Apply adapters
     model = maybe_wrap_lora(args, model)
     model = maybe_apply_script(args, model, tokenizer)
@@ -585,13 +604,13 @@ def main():
     # Generation config
     gen_conf = GenerationConfig.from_model_config(model.config)
     gen_conf.max_new_tokens = args.max_target_length
-    gen_conf.num_beams = 4
+    gen_conf.num_beams = args.num_beams
     gen_conf.do_sample = False
     gen_conf.eos_token_id = tokenizer.eos_token_id
     gen_conf.pad_token_id = tokenizer.pad_token_id
-    # context length는 입력 길이로 고정
-    # (참고코드 1은 max_length + max_new_tokens + 5 = data.max_length 사용)
+
     model.generation_config = gen_conf
+
 
     # ------------------------------------------------------------------
     # Backend 분기: HF Trainer  vs  Accelerate + GPTNLGTrainer
@@ -600,15 +619,75 @@ def main():
         # Datasets & collators
         datasets = get_nlg_dataset(args, tokenizer)
         train_ds = datasets['train']
+        # train_ds = train_ds.shuffle(seed=args.seed).select(range(min(5000, len(train_ds))))
         val_ds = datasets['dev']
+        # val_ds = val_ds.shuffle(seed=args.seed).select(range(min(500, len(val_ds))))
 
-        train_collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
-        eval_collator = DataCollatorForSeq2Seq(tokenizer)
+
+        @dataclass
+        class CausalLMTrainEvalCollator:
+            tokenizer: Any
+            label_pad_token_id: int = -100
+
+            def __call__(self, features: List[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
+                # 1) 먼저 input_ids/attention_mask를 pad
+                batch = self.tokenizer.pad(
+                    {k: [f[k] for f in features] for k in features[0].keys() if k != "labels"},
+                    padding=True,
+                    return_tensors="pt",
+                )
+                B, L = batch["input_ids"].shape
+
+                if "labels" in features[0]:
+                    # ---- 핵심: labels를 각 샘플의 input_ids 길이에 맞게 "재구성" ----
+                    padded_labels = []
+                    pad_side = getattr(self.tokenizer, "padding_side", "right")
+
+                    for f in features:
+                        ids_len = len(f["input_ids"])
+                        lab = list(f["labels"])
+
+                        # (A) labels 길이를 ids_len로 맞추되, 짧으면 suffix에 붙이고 앞은 -100
+                        if len(lab) == ids_len:
+                            full = lab
+                        elif len(lab) < ids_len:
+                            full = [self.label_pad_token_id] * (ids_len - len(lab)) + lab
+                        else:  # len(lab) > ids_len
+                            full = lab[-ids_len:]  # 마지막 ids_len만 사용
+
+                        # (B) 배치 pad로 ids_len -> L 이 됐으니, pad_side에 맞춰 -100 추가
+                        pad_len = L - ids_len
+                        if pad_len < 0:
+                            # 이 경우는 거의 없지만 안전하게 truncate
+                            full = full[-L:]
+                            pad_len = 0
+
+                        if pad_side == "left":
+                            full = [self.label_pad_token_id] * pad_len + full
+                        else:
+                            full = full + [self.label_pad_token_id] * pad_len
+
+                        padded_labels.append(full)
+
+                    batch["labels"] = torch.tensor(padded_labels, dtype=torch.long)
+
+                else:
+                    # train: labels 없으면 input_ids로 생성 (응급/기본)
+                    labels = batch["input_ids"].clone()
+                    pad_id = self.tokenizer.pad_token_id
+                    if pad_id is not None:
+                        labels[labels == pad_id] = self.label_pad_token_id
+                    batch["labels"] = labels
+
+                return batch
+
+
+        collator = CausalLMTrainEvalCollator(tokenizer)
 
         # HF TrainingArguments
         training_args = Seq2SeqTrainingArguments(
             output_dir=args.save_dir,
-            overwrite_output_dir=bool(args.ckpt_dir),
+            # overwrite_output_dir=bool(args.ckpt_dir),
             seed=args.seed,
             fp16=args.fp16, bf16=args.bf16,
             deepspeed=args.deepspeed_config_file,
@@ -638,17 +717,17 @@ def main():
         )
 
         evaluator = GenerationEvaluator(tokenizer, args.task_name)
-        
+
         trainer = TextGenTrainer(
             args=training_args,
             model=model,
             processing_class=tokenizer,
-            data_collator=train_collator,
+            data_collator=collator,
             train_dataset=train_ds,
             eval_dataset=val_ds,
             compute_metrics=lambda p: evaluator(p, trainer._stored_inputs, mode="dev"),
         )
-        trainer._eval_data_collator = eval_collator
+        trainer._eval_data_collator = collator
 
         print("\nStart Training (HF Trainer + legacy metrics)…")
         if args.ckpt_dir:
@@ -786,6 +865,7 @@ def main():
         # 학습
         trainer.train()
         print("Finished (Accelerate path)")
+
 
 if __name__ == "__main__":
     main()

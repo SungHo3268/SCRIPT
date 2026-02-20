@@ -8,8 +8,12 @@
 # Author : Ramakrishna Vedantam <vrama91@vt.edu>
 
 from konlpy.tag import Mecab
+import os
+os.environ["MECABRC"] = os.path.expanduser("/usr/local/etc/mecabrc")
 
-mecab = Mecab()
+DICPATH = os.environ.get("MECAB_DICPATH", "/usr/local/lib/mecab/dic/mecab-ko-dic")
+mecab = Mecab(dicpath=DICPATH)
+
 
 
 def my_lcs(string, sub):
