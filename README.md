@@ -1,5 +1,11 @@
 # SCRIPT: A Subcharacter Compositional Representation Injection Module for Korean Pre-Trained Language Models
 
+*This paper is accepted to ACL 2026 Findings.<br/>
+SungHo Kim, Juhyeong Park, Atalay Eda, SangKeun Lee*
+
+<br/>
+
+
 SCRIPT is a lightweight, plug-and-play module that injects Korean subcharacter compositional knowledge into pre-trained language models without modifying their original architectures and from scratch pre-training.
 
 <img src='assets/whole_architecture.png' width='100%'>
