@@ -1,7 +1,7 @@
 # SCRIPT: A Subcharacter Compositional Representation Injection Module for Korean Pre-Trained Language Models
 
-*This paper is accepted to ACL 2026 Findings.<br/>
-SungHo Kim, Juhyeong Park, Atalay Eda, SangKeun Lee*
+This paper is accepted to **_ACL 2026 Findings_**.<br/>
+**_SungHo Kim_**, Juhyeong Park, Atalay Eda, SangKeun Lee
 
 <br/>
 
@@ -14,8 +14,8 @@ SCRIPT is a lightweight, plug-and-play module that injects Korean subcharacter c
 <br/>
 
 *This repository is currently under review.* <br/>
-- *Dataset for Character Tagging Analysis (for Section 2. Motivation) will be released [here]() upon acceptance.* <br/>
-- *BERT and KOMBO pre-trained models will be released [here]() upon acceptance.* <br/>
+- *Dataset for Character Tagging Analysis (for Section 2. Motivation) is released [here](https://drive.google.com/file/d/1fdorgYVFhpdXFtZVmDd7dX5Bvj9NlDgE/view?usp=sharing).* <br/>
+- *BERT and KOMBO pre-trained models are released [here](https://drive.google.com/file/d/14rntFZ6GGKFbijhm3OftzffPmPrbRh84/view?usp=sharing).* <br/>
   *(Other baselines are obtained from HuggingFace* 🤗 *)* <br/>
 <br/>
 <br/>
