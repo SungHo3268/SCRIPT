@@ -1,5 +1,17 @@
 # SCRIPT: A Subcharacter Compositional Representation Injection Module for Korean Pre-Trained Language Models
 
+[![CC BY 4.0][cc-by-shield]][cc-by]
+[![arXiv][arXiv-paper-shield]][arXiv-paper]
+
+
+
+[cc-by-shield]: https://img.shields.io/badge/License-CC%20BY%204.0-lightgrey.svg
+[cc-by]: https://creativecommons.org/licenses/by/4.0/
+
+[arXiv-paper-shield]: https://img.shields.io/badge/📋.-%20arXiv%20-red.svg
+[arXiv-paper]: https://arxiv.org/pdf/2604.12377
+
+
 This paper is accepted to **_ACL 2026 Findings_**.<br/>
 **_SungHo Kim_**, Juhyeong Park, Atalay Eda, SangKeun Lee
 
