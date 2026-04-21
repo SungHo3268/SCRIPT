@@ -9,7 +9,7 @@
 [cc-by]: https://creativecommons.org/licenses/by/4.0/
 
 [arXiv-paper-shield]: https://img.shields.io/badge/📋.-%20arXiv%20-red.svg
-[arXiv-paper]: https://arxiv.org/pdf/2604.12377
+[arXiv-paper]: https://arxiv.org/abs/2604.12377
 
 
 This paper is accepted to **_ACL 2026 Findings_**.<br/>
